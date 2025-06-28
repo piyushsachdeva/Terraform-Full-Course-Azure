@@ -20,11 +20,10 @@ locals {
   backend_script_path  = "${path.module}/scripts/backend_provision.sh"
 }
 
-# Template files for provisioning scripts with variable substitution
-data "template_file" "provisioning_script" {
-  template = file(var.is_frontend ? local.frontend_script_path : local.backend_script_path)
-
-  vars = var.is_frontend ? {
+# Generate provisioning script with variable substitution using templatefile()
+locals {
+  # Generate the provisioning script content with variable substitution
+  provisioning_script_content = var.is_frontend ? templatefile(local.frontend_script_path, {
     # Frontend script variables
     user_assigned_identity_id = azurerm_user_assigned_identity.vmss_identity.id
     dockerhub_username        = var.dockerhub_username
@@ -32,7 +31,7 @@ data "template_file" "provisioning_script" {
     application_port          = var.application_port
     full_image_name           = local.full_image_name
     backend_lb_ip             = var.backend_load_balancer_ip
-    } : {
+    }) : templatefile(local.backend_script_path, {
     # Backend script variables
     user_assigned_identity_id = azurerm_user_assigned_identity.vmss_identity.id
     dockerhub_username        = var.dockerhub_username
@@ -46,7 +45,7 @@ data "template_file" "provisioning_script" {
     db_password               = var.database_connection.password
     db_name                   = var.database_connection.dbname
     db_sslmode                = var.database_connection.sslmode
-  }
+  })
 }
 
 # VM SSH Key for Admin Access
@@ -204,7 +203,7 @@ resource "azurerm_linux_virtual_machine_scale_set" "vmss" {
   sku                 = var.vm_size
   instances           = var.instance_count
   admin_username      = var.admin_username
-  custom_data         = base64encode(data.template_file.provisioning_script.rendered)
+  custom_data         = base64encode(local.provisioning_script_content)
   upgrade_mode        = "Automatic"
   health_probe_id     = var.is_frontend ? null : azurerm_lb_probe.backend[0].id
   tags                = var.tags
